@@ -1,0 +1,50 @@
+document_kind: E14_CAMARA
+
+labels:
+  - name: Pagina
+    description: "Número de página del acta (ej: Pag: 01 de 11)"
+    repeats_per_page: true
+
+  - name: TipoDeDocumento
+    description: "Tipo de elección (CAMARA) y circunscripción departamental"
+    repeats_per_page: true
+
+  - name: DivipolPag
+    description: "Código DIVIPOL: departamento, municipio, zona, puesto, mesa"
+    repeats_per_page: true
+
+  - name: TotalSufragantes
+    description: "Total sufragantes según formato E-11 con su valor numérico"
+    repeats_per_page: false
+
+  - name: TotalVotosUrna
+    description: "Total votos en la urna con su valor numérico"
+    repeats_per_page: false
+
+  - name: TotalVotosIncinerados
+    description: "Total votos incinerados con su valor numérico"
+    repeats_per_page: false
+
+  - name: TipoDeVotoPartido
+    description: "Bloque de partido: tipo de lista, código, nombre del partido y votos totales"
+    repeats_per_page: true
+
+  - name: VotosEnBlanco
+    description: "Votos en blanco con su valor numérico"
+    repeats_per_page: false
+
+  - name: VotosNulos
+    description: "Votos nulos con su valor numérico"
+    repeats_per_page: false
+
+  - name: VotosNoMarcados
+    description: "Votos no marcados con su valor numérico"
+    repeats_per_page: false
+
+  - name: FirmasJurados
+    description: "Bloque de firmas y cédulas de los jurados de votación"
+    repeats_per_page: false
+
+  - name: HuboRecuento
+    description: "Indicador si hubo recuento de votos (Sí/No) y quién lo solicitó"
+    repeats_per_page: false
