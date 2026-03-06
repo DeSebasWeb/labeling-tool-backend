@@ -4,15 +4,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Directorios de almacenamiento local — usados por repositorios locales y renderer
-    upload_dir: str
-    pages_dir: str
-    documents_storage_dir: str
-    annotations_storage_dir: str
-    schemas_dir: str
-
-    # Azure Blob Storage / Azurite
+    # Azure Blob Storage / Azurite (primary storage)
     azure_storage_connection_string: str
+
+    # Legacy local dirs — no longer used, kept optional for backwards compat
+    upload_dir: str = "./data/uploads"
+    pages_dir: str = "./data/pages"
+    documents_storage_dir: str = "./data/documents"
+    annotations_storage_dir: str = "./data/annotations"
+    schemas_dir: str = "./config/schemas"
 
     # Renderizado PDF
     render_dpi: int = 150

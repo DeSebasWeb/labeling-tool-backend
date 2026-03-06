@@ -43,6 +43,12 @@ class Workspace:
         self.documents[blob_name] = WorkspaceDocumentStatus.DONE
         self.updated_at = datetime.now(UTC)
 
+    def remove_document(self, blob_name: str) -> None:
+        """Elimina un documento del registro del workspace."""
+        self._require_exists(blob_name)
+        del self.documents[blob_name]
+        self.updated_at = datetime.now(UTC)
+
     def documents_ready_for_training(self) -> list[str]:
         """Retorna los blob_names de PDFs en estado DONE."""
         return [
