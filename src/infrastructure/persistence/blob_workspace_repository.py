@@ -59,6 +59,7 @@ class BlobWorkspaceRepository(IWorkspaceRepository):
             "container_name": workspace.container_name,
             "document_kind": workspace.document_kind.value,
             "model_name": workspace.model_name,
+            "labels": workspace.labels,
             "documents": {
                 blob_name: status.value
                 for blob_name, status in workspace.documents.items()
@@ -78,6 +79,7 @@ class BlobWorkspaceRepository(IWorkspaceRepository):
                 blob_name: WorkspaceDocumentStatus(status)
                 for blob_name, status in data.get("documents", {}).items()
             },
+            labels=data.get("labels", []),
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
         )

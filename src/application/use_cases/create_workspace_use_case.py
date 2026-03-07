@@ -43,6 +43,7 @@ class CreateWorkspaceUseCase:
         name: str,
         document_kind: DocumentKind,
         model_name: str,
+        labels: list[dict] = None,
     ) -> Workspace:
         container_name = _slugify(name)
 
@@ -57,6 +58,7 @@ class CreateWorkspaceUseCase:
             container_name=container_name,
             document_kind=document_kind,
             model_name=model_name,
+            labels=labels or [],
         )
 
         self._workspace_repository.save(workspace)

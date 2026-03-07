@@ -13,6 +13,7 @@ class WorkspaceResponse(BaseModel):
     container_name: str
     document_kind: str
     model_name: str
+    labels: list[dict] = []
     total_documents: int
     total_done: int
     documents: list[WorkspaceDocumentEntry]

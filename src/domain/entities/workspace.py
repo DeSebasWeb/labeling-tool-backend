@@ -17,6 +17,7 @@ class Workspace:
     document_kind: DocumentKind
     model_name: str                # nombre que tendrá el modelo al entrenar
     documents: dict[str, WorkspaceDocumentStatus] = field(default_factory=dict)
+    labels: list[dict] = field(default_factory=list)  # [{name, color, description}, ...]
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -61,6 +62,32 @@ class Workspace:
 
     def total_done(self) -> int:
         return len(self.documents_ready_for_training())
+
+    def add_label(self, name: str, color: str, description: str = "", label_type: str = "text") -> None:
+        """Añade una etiqueta al workspace si no existe ya."""
+        if not any(lbl["name"] == name for lbl in self.labels):
+            self.labels.append({"name": name, "color": color, "description": description, "label_type": label_type})
+            self.updated_at = datetime.now(UTC)
+
+    def remove_label(self, name: str) -> None:
+        """Elimina una etiqueta del workspace."""
+        self.labels = [lbl for lbl in self.labels if lbl["name"] != name]
+        self.updated_at = datetime.now(UTC)
+
+    def update_label(self, name: str, new_name: str = None, color: str = None, description: str = None) -> None:
+        """Actualiza una etiqueta existente (incluyendo renombrar)."""
+        if new_name and new_name != name and any(lbl["name"] == new_name for lbl in self.labels):
+            raise ValueError(f"Ya existe una etiqueta con el nombre '{new_name}'")
+        for lbl in self.labels:
+            if lbl["name"] == name:
+                if new_name is not None:
+                    lbl["name"] = new_name
+                if color is not None:
+                    lbl["color"] = color
+                if description is not None:
+                    lbl["description"] = description
+                self.updated_at = datetime.now(UTC)
+                return
 
     def _require_exists(self, blob_name: str) -> None:
         if blob_name not in self.documents:

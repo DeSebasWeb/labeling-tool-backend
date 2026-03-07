@@ -7,3 +7,4 @@ class CreateWorkspaceRequest(BaseModel):
     name: str = Field(..., min_length=3, max_length=63)
     document_kind: DocumentKind
     model_name: str = Field(..., min_length=1)
+    labels: list[dict] = []  # [{name, color, description}, ...]
