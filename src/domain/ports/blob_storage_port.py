@@ -44,3 +44,8 @@ class IBlobStoragePort(ABC):
     @abstractmethod
     def delete_blob(self, container_name: str, blob_name: str) -> None:
         ...
+
+    @abstractmethod
+    def delete_container(self, container_name: str) -> None:
+        """Elimina el container y todos sus blobs."""
+        ...

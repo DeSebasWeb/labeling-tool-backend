@@ -100,3 +100,14 @@ class AzureBlobStorageAdapter(IBlobStoragePort):
             raise BlobStorageException(
                 f"Error eliminando blob '{blob_name}' de '{container_name}': {e}"
             )
+
+    def delete_container(self, container_name: str) -> None:
+        try:
+            container = self._client.get_container_client(container_name)
+            container.delete_container()
+        except ResourceNotFoundError:
+            pass  # ya no existe — idempotente
+        except Exception as e:
+            raise BlobStorageException(
+                f"Error eliminando container '{container_name}': {e}"
+            )
