@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # Renderizado PDF
     render_dpi: int = 150
 
+    # Layout Detector service — URL interna del servidor GPU (nunca expuesta al browser)
+    layout_detector_url: str = "http://localhost:8000"
+
+    # Text Detector (OCR Engine) service — URL interna del servidor GPU
+    text_detector_url: str = "http://localhost:8002"
+
     # Servidor
     host: str = "0.0.0.0"
     port: int = 8000

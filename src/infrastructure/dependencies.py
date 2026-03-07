@@ -11,6 +11,8 @@ from ..application.use_cases.list_workspaces_use_case import ListWorkspacesUseCa
 from ..application.use_cases.get_workspace_use_case import GetWorkspaceUseCase
 from ..application.use_cases.upload_document_to_workspace_use_case import UploadDocumentToWorkspaceUseCase
 from ..application.use_cases.mark_document_done_in_workspace_use_case import MarkDocumentDoneInWorkspaceUseCase
+from ..application.use_cases.auto_label_use_case import AutoLabelUseCase
+from ..domain.services.center_distance_matching_strategy import CenterDistanceMatchingStrategy
 
 
 # ─── blob storage ────────────────────────────────────────────────────────────
@@ -70,3 +72,7 @@ def get_mark_document_done_in_workspace_use_case(
     workspace_repository=Depends(get_workspace_repository),
 ):
     return MarkDocumentDoneInWorkspaceUseCase(workspace_repository)
+
+
+def get_auto_label_use_case() -> AutoLabelUseCase:
+    return AutoLabelUseCase(matching_strategy=CenterDistanceMatchingStrategy())
