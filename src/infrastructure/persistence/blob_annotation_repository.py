@@ -47,6 +47,8 @@ class BlobAnnotationRepository:
             "bbox": data["bbox"],
             "value_string": data.get("value_string", ""),
             "confidence": data.get("confidence", 1.0),
+            "text_type": data.get("text_type", "unknown"),
+            "source": data.get("source", "manual"),
             "created_at": now,
             "updated_at": now,
         }
@@ -58,7 +60,7 @@ class BlobAnnotationRepository:
         annotations = self._load(container, blob_name)
         for ann in annotations:
             if ann["id"] == annotation_id:
-                for key in ("label", "bbox", "value_string"):
+                for key in ("label", "bbox", "value_string", "confidence", "text_type", "source"):
                     if key in updates and updates[key] is not None:
                         ann[key] = updates[key]
                 ann["updated_at"] = datetime.now(UTC).isoformat()
