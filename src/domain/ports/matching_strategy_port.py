@@ -25,6 +25,13 @@ class BboxField(StrEnum):
 
 
 @dataclass(frozen=True)
+class PageDimensions:
+    """Dimensiones en pixeles de una pagina renderizada."""
+    width_px: float
+    height_px: float
+
+
+@dataclass(frozen=True)
 class OcrLine:
     """Linea detectada por OCR con bbox en formato Surya (x1,y1,x2,y2)."""
     text: str
@@ -66,6 +73,13 @@ class IMatchingStrategy(ABC):
         self,
         templates: list[TemplateAnnotation],
         ocr_lines: list[OcrLine],
+        *,
+        ref_page_dims: PageDimensions | None = None,
+        target_page_dims: PageDimensions | None = None,
     ) -> list[MatchedAnnotation]:
-        """Dado un conjunto de templates y lineas OCR, retorna las anotaciones matcheadas."""
+        """Dado un conjunto de templates y lineas OCR, retorna las anotaciones matcheadas.
+
+        Si se proporcionan ref_page_dims y target_page_dims, escala las coordenadas
+        del template del espacio de pixeles de referencia al espacio del documento destino.
+        """
         ...
