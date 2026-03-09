@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Text Detector (OCR Engine) service — URL interna del servidor GPU
     text_detector_url: str = "http://localhost:8002"
 
+    # Training service — URL interna para iniciar entrenamientos
+    training_service_url: str = "http://localhost:8003"
+
     # Servidor
     host: str = "0.0.0.0"
     port: int = 8000

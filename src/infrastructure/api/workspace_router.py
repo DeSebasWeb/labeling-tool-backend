@@ -20,6 +20,12 @@ from ...application.use_cases.upload_document_to_workspace_use_case import Uploa
 from ...application.use_cases.mark_document_done_in_workspace_use_case import MarkDocumentDoneInWorkspaceUseCase
 from ..persistence.blob_document_repository import BlobDocumentRepository
 from ..persistence.blob_annotation_repository import BlobAnnotationRepository
+from ...application.use_cases.start_training_from_workspace_use_case import (
+    StartTrainingFromWorkspaceUseCase,
+    WorkspaceNotReadyError,
+)
+from ...application.use_cases.get_training_status_use_case import GetTrainingStatusUseCase
+from ..client.http_training_service_adapter import TrainingBadRequestError
 from ..dependencies import (
     get_create_workspace_use_case,
     get_list_workspaces_use_case,
@@ -31,6 +37,8 @@ from ..dependencies import (
     get_workspace_repository,
     get_blob_storage,
     get_auto_label_use_case,
+    get_start_training_use_case,
+    get_get_training_status_use_case,
 )
 from ..image.crop_utils import crop_region_base64
 from ...domain.ports.matching_strategy_port import TemplateAnnotation, OcrLine, LabelType, PageDimensions
@@ -153,6 +161,43 @@ async def upload_document(
         raise HTTPException(status_code=502, detail=str(e))
     finally:
         await file.close()
+
+
+# ── Training ─────────────────────────────────────────────────────────────────
+
+@router.post("/{workspace_id}/train")
+async def start_training(
+    workspace_id: str,
+    use_case: StartTrainingFromWorkspaceUseCase = Depends(get_start_training_use_case),
+):
+    """Inicia un job de entrenamiento para el workspace."""
+    try:
+        result = await use_case.execute(workspace_id)
+        return result
+    except WorkspaceNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except WorkspaceNotReadyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except TrainingBadRequestError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="Training service no disponible")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Training service error: {e.response.status_code}")
+
+
+@router.get("/{workspace_id}/train/status")
+async def get_training_status(
+    workspace_id: str,
+    use_case: GetTrainingStatusUseCase = Depends(get_get_training_status_use_case),
+):
+    """Obtiene el estado de los jobs de entrenamiento del workspace."""
+    try:
+        return await use_case.execute(workspace_id)
+    except (httpx.ConnectError, httpx.HTTPStatusError):
+        # Si el training-service no está disponible, retornar lista vacía
+        # (es una consulta de estado, no una acción crítica)
+        return []
 
 
 # ── Annotations CRUD — REORDERED (annotations BEFORE documents for route priority) ───
