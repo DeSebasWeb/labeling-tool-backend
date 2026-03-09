@@ -1468,9 +1468,11 @@ async def auto_label(
                     ocr_lines_cache[page_num] = _load_ocr_lines(
                         blob_storage, container, prefix, page_num,
                     )
+                # Tablas de candidatos → 12 columnas E14; consolidados → detección automática
+                is_candidato_table = not m.label.startswith("ConsolidadoVotos")
                 assembled = _assemble_table_from_ocr(
                     ocr_lines_cache[page_num], m.bbox,
-                    expected_cols=len(E14_DEFAULT_COLUMNS),
+                    expected_cols=len(E14_DEFAULT_COLUMNS) if is_candidato_table else None,
                 )
                 if assembled is not None:
                     value_string = json.dumps({
