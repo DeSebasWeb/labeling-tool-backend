@@ -1126,37 +1126,30 @@ class AssembleTableResponse(BaseModel):
     rows: list[list[CellData]]
 
 
-_TWO_DIGITS = re.compile(r"^\d{2}$")
+_ID_CANDIDATO_RE = re.compile(r"^\d{2,3}$")
 
 
 def _fix_e14_id_columns(rows: list[list["CellData"]]) -> None:
     """Corrige la ubicación de IDCandidato2 (col 4) e IDCandidato3 (col 8).
 
     Regla de negocio E14:
-      - IDCandidato2 e IDCandidato3 son siempre exactamente 2 dígitos numéricos.
-      - Si la columna esperada está vacía o tiene un valor que NO es 2 dígitos,
-        busca en las columnas adyacentes (±1) un valor de exactamente 2 dígitos
-        y lo mueve a la posición correcta, desplazando las casillas afectadas.
+      - IDCandidato2 e IDCandidato3 son siempre 2 o 3 dígitos (nunca 0 ni 1 dígito).
+      - Si la columna esperada no cumple, busca en columnas adyacentes (±1)
+        y hace swap.
     """
     for row in rows:
         for id_col in (4, 8):
             id_text = row[id_col].text.strip()
-            if _TWO_DIGITS.match(id_text):
-                continue  # ya está bien
+            if _ID_CANDIDATO_RE.match(id_text):
+                continue
 
-            # Buscar en columna anterior (id_col - 1): el ID se fue a la casilla de la izquierda
             left = id_col - 1
-            if left >= 0 and _TWO_DIGITS.match(row[left].text.strip()):
-                # El ID está en left, y lo que debería estar en left está merged o desplazado.
-                # Desplazar: left toma el valor de left, id_col toma el de left (el ID).
-                # Concretamente: col left tiene el ID → moverlo a id_col,
-                # y lo que estaba en id_col (si algo) va a left.
+            if left >= 0 and _ID_CANDIDATO_RE.match(row[left].text.strip()):
                 row[left], row[id_col] = row[id_col], row[left]
                 continue
 
-            # Buscar en columna siguiente (id_col + 1): el ID se fue a la casilla de la derecha
             right = id_col + 1
-            if right < len(row) and _TWO_DIGITS.match(row[right].text.strip()):
+            if right < len(row) and _ID_CANDIDATO_RE.match(row[right].text.strip()):
                 row[id_col], row[right] = row[right], row[id_col]
                 continue
 
