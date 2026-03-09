@@ -74,3 +74,12 @@ class BlobAnnotationRepository:
         if len(filtered) == len(annotations):
             raise ValueError(f"Anotación '{annotation_id}' no encontrada")
         self._save(container, blob_name, filtered)
+
+    def delete_annotations_by_source(self, container: str, blob_name: str, source: str) -> int:
+        """Elimina todas las anotaciones con el source indicado. Retorna la cantidad eliminada."""
+        annotations = self._load(container, blob_name)
+        filtered = [a for a in annotations if a.get("source") != source]
+        removed = len(annotations) - len(filtered)
+        if removed > 0:
+            self._save(container, blob_name, filtered)
+        return removed

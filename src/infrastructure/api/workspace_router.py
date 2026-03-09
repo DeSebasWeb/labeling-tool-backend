@@ -219,6 +219,27 @@ async def delete_annotation(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+class ClearAnnotationsResponse(BaseModel):
+    deleted: int
+
+
+@router.delete("/{workspace_id}/documents/{blob_name:path}/annotations", response_model=ClearAnnotationsResponse)
+async def clear_annotations_by_source(
+    workspace_id: str,
+    blob_name: str,
+    source: str = "auto_label",
+    ann_repo: BlobAnnotationRepository = Depends(get_blob_annotation_repository),
+    ws_repo=Depends(get_workspace_repository),
+):
+    """Elimina todas las anotaciones con el source indicado (default: auto_label)."""
+    try:
+        workspace = ws_repo.find_by_id(workspace_id)
+    except WorkspaceNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    deleted = ann_repo.delete_annotations_by_source(workspace.container_name, blob_name, source)
+    return ClearAnnotationsResponse(deleted=deleted)
+
+
 # ── Delete document (blob + workspace registry) ─────────────────────────────
 
 @router.delete("/{workspace_id}/documents/{blob_name:path}", response_model=WorkspaceResponse)
@@ -1107,15 +1128,25 @@ class AssembleTableResponse(BaseModel):
 def _assemble_table_from_ocr(
     all_lines: list[dict],
     bbox: dict,
+    tolerance_ratio: float = 0.15,
+    expected_cols: int | None = None,
 ) -> AssembleTableResponse | None:
     """Organiza lineas OCR dentro de un bbox como tabla (filas x columnas).
 
-    Retorna None si no hay lineas dentro del bbox.
+    tolerance_ratio expande el bbox para capturar lineas ligeramente fuera.
+    Solo expande horizontalmente y hacia abajo — nunca hacia arriba,
+    para evitar capturar encabezados de partidos u otros textos superiores.
+    Retorna None si no hay lineas dentro del bbox expandido.
     """
     bx_min = bbox.get("x_min", 0)
     by_min = bbox.get("y_min", 0)
     bx_max = bbox.get("x_max", 0)
     by_max = bbox.get("y_max", 0)
+
+    margin_x = (bx_max - bx_min) * tolerance_ratio
+    bx_min -= margin_x
+    bx_max += margin_x
+    # No expandir verticalmente para no capturar encabezados ni totales
 
     inside = []
     for ln in all_lines:
