@@ -1150,19 +1150,28 @@ def _assemble_table_from_ocr(
     # Detectar columnas por clustering de centros X
     all_cx = sorted([(ln["x1"] + ln["x2"]) / 2 for ln in inside])
 
-    widths = [ln["x2"] - ln["x1"] for ln in inside]
-    avg_width = sum(widths) / len(widths) if widths else 20
-    x_threshold = avg_width * 0.8
+    if expected_cols and expected_cols > 0:
+        # Dividir el rango X en N columnas equidistantes
+        x_min_all = min(ln["x1"] for ln in inside)
+        x_max_all = max(ln["x2"] for ln in inside)
+        col_width = (x_max_all - x_min_all) / expected_cols
+        col_centers = [x_min_all + col_width * (i + 0.5) for i in range(expected_cols)]
+        num_cols = expected_cols
+    else:
+        widths = [ln["x2"] - ln["x1"] for ln in inside]
+        avg_width = sum(widths) / len(widths) if widths else 20
+        x_threshold = avg_width * 0.8
 
-    col_centers: list[float] = [all_cx[0]]
-    for cx in all_cx[1:]:
-        if cx - col_centers[-1] > x_threshold:
-            col_centers.append(cx)
-        else:
-            col_centers[-1] = (col_centers[-1] + cx) / 2
+        col_centers: list[float] = [all_cx[0]]
+        for cx in all_cx[1:]:
+            if cx - col_centers[-1] > x_threshold:
+                col_centers.append(cx)
+            else:
+                col_centers[-1] = (col_centers[-1] + cx) / 2
 
-    col_centers.sort()
-    num_cols = len(col_centers)
+        col_centers.sort()
+        num_cols = len(col_centers)
+
     columns = [_default_column_name(i) for i in range(num_cols)]
 
     def nearest_col(ln: dict) -> int:
@@ -1395,6 +1404,7 @@ async def auto_label(
                     )
                 assembled = _assemble_table_from_ocr(
                     ocr_lines_cache[page_num], m.bbox,
+                    expected_cols=len(E14_DEFAULT_COLUMNS),
                 )
                 if assembled is not None:
                     value_string = json.dumps({
