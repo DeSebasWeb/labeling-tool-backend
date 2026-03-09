@@ -1126,30 +1126,39 @@ class AssembleTableResponse(BaseModel):
     rows: list[list[CellData]]
 
 
-_ID_CANDIDATO_RE = re.compile(r"^\d{2,3}$")
+_ID_CANDIDATO_RE = re.compile(r"^[\d.]{2,4}$")
+
+
+def _is_id_candidato(text: str) -> bool:
+    """Verifica si un texto parece un ID de candidato E14 (2-3 dígitos, con puntos opcionales del OCR)."""
+    if not _ID_CANDIDATO_RE.match(text):
+        return False
+    # Debe contener al menos 2 dígitos reales
+    digit_count = sum(1 for c in text if c.isdigit())
+    return digit_count >= 2
 
 
 def _fix_e14_id_columns(rows: list[list["CellData"]]) -> None:
     """Corrige la ubicación de IDCandidato2 (col 4) e IDCandidato3 (col 8).
 
     Regla de negocio E14:
-      - IDCandidato2 e IDCandidato3 son siempre 2 o 3 dígitos (nunca 0 ni 1 dígito).
+      - IDCandidato2 e IDCandidato3 son siempre 2 o 3 dígitos (con puntos opcionales del OCR).
       - Si la columna esperada no cumple, busca en columnas adyacentes (±1)
         y hace swap.
     """
     for row in rows:
         for id_col in (4, 8):
             id_text = row[id_col].text.strip()
-            if _ID_CANDIDATO_RE.match(id_text):
+            if _is_id_candidato(id_text):
                 continue
 
             left = id_col - 1
-            if left >= 0 and _ID_CANDIDATO_RE.match(row[left].text.strip()):
+            if left >= 0 and _is_id_candidato(row[left].text.strip()):
                 row[left], row[id_col] = row[id_col], row[left]
                 continue
 
             right = id_col + 1
-            if right < len(row) and _ID_CANDIDATO_RE.match(row[right].text.strip()):
+            if right < len(row) and _is_id_candidato(row[right].text.strip()):
                 row[id_col], row[right] = row[right], row[id_col]
                 continue
 
