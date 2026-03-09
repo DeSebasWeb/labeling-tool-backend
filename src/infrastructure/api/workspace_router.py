@@ -33,7 +33,7 @@ from ..dependencies import (
     get_auto_label_use_case,
 )
 from ..image.crop_utils import crop_region_base64
-from ...domain.ports.matching_strategy_port import TemplateAnnotation, OcrLine, LabelType
+from ...domain.ports.matching_strategy_port import TemplateAnnotation, OcrLine, LabelType, PageDimensions
 from ...application.use_cases.auto_label_use_case import AutoLabelUseCase
 from ..config import Settings, get_settings
 from .dtos.create_workspace_request import CreateWorkspaceRequest
@@ -1037,6 +1037,19 @@ class AssembleTableBody(BaseModel):
     bbox: dict  # {x_min, y_min, x_max, y_max}
 
 
+E14_DEFAULT_COLUMNS = [
+    "IDCandidato1", "Casilla1", "Casilla2", "Casilla3",
+    "IDCandidato2", "Casilla4", "Casilla5", "Casilla6",
+    "IDCandidato3", "Casilla7", "Casilla8", "Casilla9",
+]
+
+
+def _default_column_name(index: int) -> str:
+    if index < len(E14_DEFAULT_COLUMNS):
+        return E14_DEFAULT_COLUMNS[index]
+    return f"Col {index + 1}"
+
+
 class CellData(BaseModel):
     text: str
     bbox: dict | None = None  # {x_min, y_min, x_max, y_max} — null if manually added
@@ -1044,6 +1057,130 @@ class CellData(BaseModel):
 class AssembleTableResponse(BaseModel):
     columns: list[str]
     rows: list[list[CellData]]
+
+
+def _assemble_table_from_ocr(
+    all_lines: list[dict],
+    bbox: dict,
+) -> AssembleTableResponse | None:
+    """Organiza lineas OCR dentro de un bbox como tabla (filas x columnas).
+
+    Retorna None si no hay lineas dentro del bbox.
+    """
+    bx_min = bbox.get("x_min", 0)
+    by_min = bbox.get("y_min", 0)
+    bx_max = bbox.get("x_max", 0)
+    by_max = bbox.get("y_max", 0)
+
+    inside = []
+    for ln in all_lines:
+        cx = (ln["x1"] + ln["x2"]) / 2
+        cy = (ln["y1"] + ln["y2"]) / 2
+        if bx_min <= cx <= bx_max and by_min <= cy <= by_max:
+            inside.append(ln)
+
+    if not inside:
+        return None
+
+    # Ordenar por Y, luego agrupar en filas por proximidad vertical
+    inside.sort(key=lambda l: l["y1"])
+
+    heights = [l["y2"] - l["y1"] for l in inside]
+    avg_height = sum(heights) / len(heights) if heights else 10
+    y_threshold = avg_height * 0.6
+
+    rows_grouped: list[list[dict]] = []
+    current_row = [inside[0]]
+    for ln in inside[1:]:
+        if abs(ln["y1"] - current_row[0]["y1"]) <= y_threshold:
+            current_row.append(ln)
+        else:
+            rows_grouped.append(current_row)
+            current_row = [ln]
+    rows_grouped.append(current_row)
+
+    for row in rows_grouped:
+        row.sort(key=lambda l: l["x1"])
+
+    # Detectar columnas por clustering de centros X
+    all_cx = sorted([(ln["x1"] + ln["x2"]) / 2 for ln in inside])
+
+    widths = [ln["x2"] - ln["x1"] for ln in inside]
+    avg_width = sum(widths) / len(widths) if widths else 20
+    x_threshold = avg_width * 0.8
+
+    col_centers: list[float] = [all_cx[0]]
+    for cx in all_cx[1:]:
+        if cx - col_centers[-1] > x_threshold:
+            col_centers.append(cx)
+        else:
+            col_centers[-1] = (col_centers[-1] + cx) / 2
+
+    col_centers.sort()
+    num_cols = len(col_centers)
+    columns = [_default_column_name(i) for i in range(num_cols)]
+
+    def nearest_col(ln: dict) -> int:
+        cx = (ln["x1"] + ln["x2"]) / 2
+        best = 0
+        best_dist = abs(cx - col_centers[0])
+        for i, cc in enumerate(col_centers[1:], 1):
+            d = abs(cx - cc)
+            if d < best_dist:
+                best_dist = d
+                best = i
+        return best
+
+    rows = []
+    for row_group in rows_grouped:
+        cells: list[CellData] = [CellData(text="") for _ in range(num_cols)]
+        for ln in row_group:
+            ci = nearest_col(ln)
+            ln_bbox = {"x_min": ln["x1"], "y_min": ln["y1"], "x_max": ln["x2"], "y_max": ln["y2"]}
+            if cells[ci].text:
+                prev = cells[ci]
+                merged_bbox = None
+                if prev.bbox:
+                    merged_bbox = {
+                        "x_min": min(prev.bbox["x_min"], ln_bbox["x_min"]),
+                        "y_min": min(prev.bbox["y_min"], ln_bbox["y_min"]),
+                        "x_max": max(prev.bbox["x_max"], ln_bbox["x_max"]),
+                        "y_max": max(prev.bbox["y_max"], ln_bbox["y_max"]),
+                    }
+                else:
+                    merged_bbox = ln_bbox
+                cells[ci] = CellData(text=prev.text + " " + ln["text"], bbox=merged_bbox)
+            else:
+                cells[ci] = CellData(text=ln["text"], bbox=ln_bbox)
+        rows.append(cells)
+
+    return AssembleTableResponse(columns=columns, rows=rows)
+
+
+def _load_ocr_lines(blob_storage, container: str, prefix: str, page_number: int) -> list[dict]:
+    """Carga las lineas OCR de una pagina desde blob storage."""
+    ocr_blob = f"{prefix}/_ocr_page_{page_number}.json"
+    try:
+        raw = blob_storage.download(container, ocr_blob)
+        ocr_result = json.loads(raw)
+    except Exception:
+        return []
+
+    all_lines = []
+    for page_result in ocr_result.get("results", []):
+        for ext in page_result.get("extractions", []):
+            text = ext.get("text", "").strip()
+            if not text:
+                continue
+            bb = ext.get("bounding_box", {})
+            all_lines.append({
+                "text": text,
+                "x1": bb.get("x1", 0),
+                "y1": bb.get("y1", 0),
+                "x2": bb.get("x2", 0),
+                "y2": bb.get("y2", 0),
+            })
+    return all_lines
 
 
 @router.post("/{workspace_id}/documents/{blob_name:path}/assemble-table")
@@ -1063,126 +1200,16 @@ async def assemble_table(
 
     container = workspace.container_name
     prefix = os.path.splitext(blob_name)[0]
-    ocr_blob = f"{prefix}/_ocr_page_{body.page_number}.json"
+    all_lines = _load_ocr_lines(blob_storage, container, prefix, body.page_number)
 
-    try:
-        raw = blob_storage.download(container, ocr_blob)
-        ocr_result = json.loads(raw)
-    except Exception:
+    if not all_lines:
         return AssembleTableResponse(columns=["Col 1"], rows=[[CellData(text="")]])
 
-    # Recoger todas las lineas OCR de esta pagina
-    all_lines = []
-    for page_result in ocr_result.get("results", []):
-        for ext in page_result.get("extractions", []):
-            text = ext.get("text", "").strip()
-            if not text:
-                continue
-            bb = ext.get("bounding_box", {})
-            all_lines.append({
-                "text": text,
-                "x1": bb.get("x1", 0),
-                "y1": bb.get("y1", 0),
-                "x2": bb.get("x2", 0),
-                "y2": bb.get("y2", 0),
-            })
-
-    # Filtrar: solo las lineas cuyo centro cae dentro del bbox del usuario
-    bx_min = body.bbox.get("x_min", 0)
-    by_min = body.bbox.get("y_min", 0)
-    bx_max = body.bbox.get("x_max", 0)
-    by_max = body.bbox.get("y_max", 0)
-
-    inside = []
-    for ln in all_lines:
-        cx = (ln["x1"] + ln["x2"]) / 2
-        cy = (ln["y1"] + ln["y2"]) / 2
-        if bx_min <= cx <= bx_max and by_min <= cy <= by_max:
-            inside.append(ln)
-
-    if not inside:
+    result = _assemble_table_from_ocr(all_lines, body.bbox)
+    if result is None:
         return AssembleTableResponse(columns=["Col 1"], rows=[[CellData(text="")]])
 
-    # Ordenar por Y, luego agrupar en filas por proximidad vertical
-    inside.sort(key=lambda l: l["y1"])
-
-    # Calcular umbral de agrupacion: altura promedio de las lineas
-    heights = [l["y2"] - l["y1"] for l in inside]
-    avg_height = sum(heights) / len(heights) if heights else 10
-    y_threshold = avg_height * 0.6  # lineas con Y similar = misma fila
-
-    rows_grouped: list[list[dict]] = []
-    current_row = [inside[0]]
-    for ln in inside[1:]:
-        if abs(ln["y1"] - current_row[0]["y1"]) <= y_threshold:
-            current_row.append(ln)
-        else:
-            rows_grouped.append(current_row)
-            current_row = [ln]
-    rows_grouped.append(current_row)
-
-    # Dentro de cada fila, ordenar por X (izquierda a derecha)
-    for row in rows_grouped:
-        row.sort(key=lambda l: l["x1"])
-
-    # Detectar columnas por clustering de centros X de todos los textos
-    all_cx = sorted([(ln["x1"] + ln["x2"]) / 2 for ln in inside])
-
-    # Ancho promedio de texto para umbral de columnas
-    widths = [ln["x2"] - ln["x1"] for ln in inside]
-    avg_width = sum(widths) / len(widths) if widths else 20
-    x_threshold = avg_width * 0.8
-
-    # Agrupar centros X en clusters (columnas)
-    col_centers: list[float] = [all_cx[0]]
-    for cx in all_cx[1:]:
-        if cx - col_centers[-1] > x_threshold:
-            col_centers.append(cx)
-        else:
-            # Actualizar centro con media movil
-            col_centers[-1] = (col_centers[-1] + cx) / 2
-
-    col_centers.sort()
-    num_cols = len(col_centers)
-    columns = [f"Col {i+1}" for i in range(num_cols)]
-
-    # Asignar cada texto a la columna mas cercana por centro X
-    def nearest_col(ln: dict) -> int:
-        cx = (ln["x1"] + ln["x2"]) / 2
-        best = 0
-        best_dist = abs(cx - col_centers[0])
-        for i, cc in enumerate(col_centers[1:], 1):
-            d = abs(cx - cc)
-            if d < best_dist:
-                best_dist = d
-                best = i
-        return best
-
-    rows = []
-    for row_group in rows_grouped:
-        cells: list[CellData] = [CellData(text="") for _ in range(num_cols)]
-        for ln in row_group:
-            ci = nearest_col(ln)
-            ln_bbox = {"x_min": ln["x1"], "y_min": ln["y1"], "x_max": ln["x2"], "y_max": ln["y2"]}
-            if cells[ci].text:
-                # Merge: concatenate text + expand bbox to cover both
-                prev = cells[ci]
-                merged_bbox = None
-                if prev.bbox:
-                    merged_bbox = {
-                        "x_min": min(prev.bbox["x_min"], ln_bbox["x_min"]),
-                        "y_min": min(prev.bbox["y_min"], ln_bbox["y_min"]),
-                        "x_max": max(prev.bbox["x_max"], ln_bbox["x_max"]),
-                        "y_max": max(prev.bbox["y_max"], ln_bbox["y_max"]),
-                    }
-                else:
-                    merged_bbox = ln_bbox
-                cells[ci] = CellData(text=prev.text + " " + ln["text"], bbox=merged_bbox)
-            else:
-                cells[ci] = CellData(text=ln["text"], bbox=ln_bbox)
-        rows.append(cells)
-
-    return AssembleTableResponse(columns=columns, rows=rows)
+    return result
 
 
 # ── Auto-label from reference document ──────────────────────────────────
@@ -1252,7 +1279,23 @@ async def auto_label(
         )
         templates_by_page.setdefault(pg, []).append(tmpl)
 
-    # 4. For each page, load saved OCR → OcrLine
+    # 4. Load page dimensions for scaling between reference and target
+    def _load_page_dims(blob: str) -> dict[int, PageDimensions]:
+        try:
+            meta = doc_repo.get_document_meta(container, blob)
+        except Exception:
+            return {}
+        return {
+            p["page_number"]: PageDimensions(
+                width_px=p["width_px"], height_px=p["height_px"],
+            )
+            for p in meta.get("pages", [])
+        }
+
+    ref_dims_by_page = _load_page_dims(body.reference_blob_name)
+    target_dims_by_page = _load_page_dims(blob_name)
+
+    # 5. For each page, load saved OCR → OcrLine
     prefix = os.path.splitext(blob_name)[0]
     ocr_by_page: dict[int, list[OcrLine]] = {}
 
@@ -1281,21 +1324,44 @@ async def auto_label(
                 ))
         ocr_by_page[page_num] = lines
 
-    # 5. Execute matching via use case (pure domain logic)
-    matched_by_page = use_case.execute(templates_by_page, ocr_by_page)
+    # 6. Execute matching via use case (pure domain logic)
+    matched_by_page = use_case.execute(
+        templates_by_page,
+        ocr_by_page,
+        ref_dims_by_page=ref_dims_by_page,
+        target_dims_by_page=target_dims_by_page,
+    )
 
-    # 6. Persist matched annotations
+    # 7. Persist matched annotations (auto-assemble tables from OCR)
     page_results: list[AutoLabelPageResultDto] = []
     total = 0
+    ocr_lines_cache: dict[int, list[dict]] = {}
 
     for page_num, matched_list in sorted(matched_by_page.items()):
         count = 0
         for m in matched_list:
+            value_string = m.value_string
+
+            # Para tablas, auto-ensamblar celdas desde OCR
+            if m.label_type == LabelType.TABLE:
+                if page_num not in ocr_lines_cache:
+                    ocr_lines_cache[page_num] = _load_ocr_lines(
+                        blob_storage, container, prefix, page_num,
+                    )
+                assembled = _assemble_table_from_ocr(
+                    ocr_lines_cache[page_num], m.bbox,
+                )
+                if assembled is not None:
+                    value_string = json.dumps({
+                        "columns": assembled.columns,
+                        "rows": [[c.model_dump() for c in row] for row in assembled.rows],
+                    }, ensure_ascii=False)
+
             ann_repo.create_annotation(container, blob_name, {
                 "page_number": page_num,
                 "label": m.label,
                 "bbox": m.bbox,
-                "value_string": m.value_string,
+                "value_string": value_string,
                 "confidence": m.confidence,
                 "source": m.source,
             })
